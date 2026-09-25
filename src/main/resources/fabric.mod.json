@@ -1,0 +1,21 @@
+{
+	"schemaVersion": 1,
+	"id": "maxenchant",
+	"version": "${version}",
+	"name": "Max Enchant",
+	"description": "Keeps one specific player's own enchant levels consistent across every item they enchant, tracked from what they've actually leveled via Penchant's grind - not a flat max.",
+	"authors": ["camerrron"],
+	"environment": "*",
+	"entrypoints": {
+		"main": ["dev.camerrron.maxenchant.MaxEnchantMod"],
+		"client": ["dev.camerrron.maxenchant.MaxEnchantClient"]
+	},
+	"mixins": ["maxenchant.mixins.json"],
+	"depends": {
+		"fabricloader": ">=0.19.5",
+		"fabric-api": "*",
+		"minecraft": "1.21.1",
+		"java": ">=21",
+		"penchant": "*"
+	}
+}

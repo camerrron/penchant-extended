@@ -1,0 +1,18 @@
+{
+	"required": true,
+	"package": "dev.camerrron.maxenchant.mixin",
+	"compatibilityLevel": "JAVA_21",
+	"mixins": [
+		"EnchantmentScreenHandlerMixin",
+		"AnvilScreenHandlerMixin",
+		"ServerPlayerEntityMixin",
+		"PenchantLevelUpMixin",
+		"PenchantmentMenuMixin"
+	],
+	"client": [
+		"client.EnchantmentScreenClientMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

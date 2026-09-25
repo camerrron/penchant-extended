@@ -1,0 +1,75 @@
+plugins {
+	// Plugin ID and property-interpolation syntax confirmed against FabricMC's own
+	// fabric-example-mod (1.21.1 branch) - the ID isn't 'fabric-loom' any more, and the
+	// plugins{} block only accepts the bare ${property} form, not ${project.property}.
+	id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
+	id 'maven-publish'
+}
+
+version = project.mod_version
+group = project.maven_group
+
+repositories {
+	maven { url = "https://maven.fabricmc.net/" }
+	// Penchant isn't on Fabric's own maven - Modrinth serves one directly, coordinate is
+	// the project slug + real version_number (confirmed against Modrinth's API, matches
+	// the exact jar already pinned in server/mods/modrinth.txt on the real server).
+	maven {
+		name = "Modrinth"
+		url = "https://api.modrinth.com/maven"
+		content { includeGroup "maven.modrinth" }
+	}
+}
+
+dependencies {
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+	// Needed to compile against EnchantmentProgress directly (PenchantLevelUpMixin mixes
+	// into Penchant's own class, not just vanilla methods it wraps). Version matches
+	// server/mods/modrinth.txt exactly - not the newer 0.3.11 used only during research.
+	modImplementation "maven.modrinth:penchant:${penchant_version}"
+
+	// MixinExtras (@Local, @WrapOperation) is bundled by Fabric Loader itself since
+	// 0.15.x - loader_version above is well past that, so no separate dependency needed
+	// for compiling against it. Confirm this still holds when Loom actually resolves
+	// dependencies; if @Local/@WrapOperation don't resolve, add MixinExtras explicitly.
+}
+
+loom {
+	// Read directly, not deploy-triggering: does not touch anything under server/ or pack/.
+
+	// Client-side code (the table-preview mixin) needs its own source set separate from
+	// the server-only mixins - splitEnvironmentSourceSets() + this "mods" block is the
+	// standard Loom pattern for exactly that, matching FabricMC's own example-mod template.
+	splitEnvironmentSourceSets()
+	mods {
+		"maxenchant" {
+			sourceSet sourceSets.main
+			sourceSet sourceSets.client
+		}
+	}
+}
+
+// Without this, fabric.mod.json's "${version}" placeholder is never substituted - the
+// first local boot test surfaced it directly: Loader warned "maxenchant uses the version
+// ${version} which isn't compatible with Loader's extended semantic version format".
+processResources {
+	def modVersion = project.version
+	inputs.property "version", modVersion
+	filesMatching("fabric.mod.json") {
+		expand "version": modVersion
+	}
+}
+
+java {
+	sourceCompatibility = JavaVersion.VERSION_21
+	targetCompatibility = JavaVersion.VERSION_21
+}
+
+tasks.withType(JavaCompile).configureEach {
+	options.encoding = "UTF-8"
+	options.release = 21
+}
