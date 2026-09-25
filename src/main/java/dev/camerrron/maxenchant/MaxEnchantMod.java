@@ -4,6 +4,7 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.enchantment.Enchantment;
 import net.minecraft.enchantment.Enchantments;
 import net.minecraft.registry.RegistryKey;
@@ -55,6 +56,7 @@ public final class MaxEnchantMod implements ModInitializer {
 		// Touch the attachment type so it registers at a predictable point, rather than
 		// relying on whichever mixin happens to reference it first at runtime.
 		Class<?> ignored = MaxEnchantAttachments.LEVELS.getClass();
+		Class<?> ignoredConfig = MaxEnchantAttachments.CONFIG_JSON.getClass();
 		MaxEnchantConfig.get();
 
 		// Debug-only: seed/set the target player's recorded levels directly, without
@@ -71,6 +73,19 @@ public final class MaxEnchantMod implements ModInitializer {
 												.executes(MaxEnchantMod::runSetCommand))))
 						.then(literal("reload").executes(MaxEnchantMod::runReloadCommand))
 		));
+
+		// Client's own config/maxenchant/config.json is a different file on a different
+		// machine (confirmed empty on the local test client instance) - the client-side
+		// display mixins need the server's actual applyCosts table pushed to them instead of
+		// reading their own local copy.
+		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> syncConfigIfTarget(handler.player));
+	}
+
+	/** Pushes the server's current applyCosts table to the target player's client. */
+	public static void syncConfigIfTarget(ServerPlayerEntity player) {
+		if (player.getUuid().equals(TARGET_PLAYER)) {
+			player.setAttached(MaxEnchantAttachments.CONFIG_JSON, MaxEnchantConfig.get().applyCostsJson());
+		}
 	}
 
 	private static int runSeedCommand(CommandContext<ServerCommandSource> ctx) {
@@ -111,6 +126,10 @@ public final class MaxEnchantMod implements ModInitializer {
 
 	private static int runReloadCommand(CommandContext<ServerCommandSource> ctx) {
 		MaxEnchantConfig.reload();
+		ServerPlayerEntity target = ctx.getSource().getServer().getPlayerManager().getPlayer(TARGET_PLAYER);
+		if (target != null) {
+			syncConfigIfTarget(target);
+		}
 		ctx.getSource().sendFeedback(() -> Text.literal("maxenchant config reloaded"), false);
 		return 1;
 	}
@@ -144,6 +163,7 @@ public final class MaxEnchantMod implements ModInitializer {
 		}
 		if (newLevel > levels.getOrDefault(enchantment, 0)) {
 			levels.put(enchantment, newLevel);
+			player.setAttached(MaxEnchantAttachments.LEVELS, levels);
 		}
 	}
 }

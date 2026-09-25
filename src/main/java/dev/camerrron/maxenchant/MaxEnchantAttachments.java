@@ -43,4 +43,24 @@ public final class MaxEnchantAttachments {
 							.persistent(Codec.unboundedMap(Enchantment.ENTRY_CODEC, Codec.INT))
 							.syncWith(STREAM_CODEC, AttachmentSyncPredicate.targetOnly())
 			);
+
+	/**
+	 * The server's config/maxenchant/config.json applyCosts table, as raw JSON, pushed to the
+	 * target player's own client. Client and server are always separate config directories -
+	 * even in this local test setup, the client instance (Instances/maxenchant-test) has its
+	 * own empty config/maxenchant/config.json, confirmed by inspecting it directly - so the
+	 * display mixins (EnchantmentSlotWidgetMixin, PenchantmentScreenMixin) reading
+	 * MaxEnchantConfig.get() locally on the client were silently reading THAT empty file, not
+	 * the server's. Same gap would exist for real in production (client and server are always
+	 * different machines). Reusing the JSON string wholesale rather than a structured codec -
+	 * simplest way to keep this in lockstep with whatever MaxEnchantConfig.get() actually
+	 * serializes, and it's only parsed on the rare occasions a slot widget is built.
+	 */
+	public static final AttachmentType<String> CONFIG_JSON =
+			AttachmentRegistry.create(
+					Identifier.of("maxenchant", "config_json"),
+					builder -> builder
+							.persistent(Codec.STRING)
+							.syncWith(PacketCodecs.STRING.cast(), AttachmentSyncPredicate.targetOnly())
+			);
 }

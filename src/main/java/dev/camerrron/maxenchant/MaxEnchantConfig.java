@@ -97,6 +97,11 @@ public final class MaxEnchantConfig {
 		}
 	}
 
+	/** Just the applyCosts table as JSON, for pushing to the target player's client. */
+	public String applyCostsJson() {
+		return GSON.toJson(applyCosts);
+	}
+
 	/** XP-level cost to instantly apply this level via the carry-over mechanic. */
 	public int getApplyCost(String enchantmentId, int level) {
 		Map<Integer, Integer> perLevel = applyCosts.get(enchantmentId);

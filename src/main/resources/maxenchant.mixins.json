@@ -11,7 +11,9 @@
 		"PenchantMaxProgressMixin"
 	],
 	"client": [
-		"client.EnchantmentScreenClientMixin"
+		"client.EnchantmentScreenClientMixin",
+		"client.EnchantmentSlotWidgetMixin",
+		"client.PenchantmentScreenMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1
