@@ -1,15 +1,19 @@
 package dev.camerrron.maxenchant;
 
+import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.enchantment.Enchantment;
 import net.minecraft.enchantment.Enchantments;
+import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.screen.ScreenHandler;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -26,13 +30,13 @@ import static net.minecraft.server.command.CommandManager.literal;
  * enchant. Not "max on enchant" - whatever level they've reached anywhere (via Penchant's
  * normal grind, on any item) is the level every future enchant of theirs starts at,
  * regardless of that item's bookshelf-limited offered roll. See mixin.PenchantLevelUpMixin
- * for where a level increase gets recorded, and the two ScreenHandler mixins for where a
- * recorded level gets applied.
+ * for where a level increase gets recorded, and mixin.PenchantmentMenuMixin (plus the two
+ * vanilla-path mixins kept for completeness) for where a recorded level gets applied.
  *
  * Fabric API has no generic "screen handler opened" event - confirmed by searching every
  * one of the 50 nested modules inside fabric-api-0.116.17+1.21.1.jar, nothing matches. So
  * tracking which open ScreenHandlers belong to the target player is done by
- * mixin.PlayerEntityMixin hooking the real vanilla method directly and calling
+ * mixin.ServerPlayerEntityMixin hooking the real vanilla method directly and calling
  * trackIfTarget() below, rather than by a Fabric API convenience callback that doesn't
  * exist.
  */
@@ -48,24 +52,24 @@ public final class MaxEnchantMod implements ModInitializer {
 
 	@Override
 	public void onInitialize() {
-		org.slf4j.LoggerFactory.getLogger("maxenchant-debug").info("MAXENCHANT DEBUG LOGGER SANITY CHECK - onInitialize ran");
-
 		// Touch the attachment type so it registers at a predictable point, rather than
 		// relying on whichever mixin happens to reference it first at runtime.
 		Class<?> ignored = MaxEnchantAttachments.LEVELS.getClass();
+		MaxEnchantConfig.get();
 
-		// Debug-only: seed the target player's recorded levels directly, without needing
-		// them to actually grind an enchant up first. Op-only (registered with a
-		// permission-level-2 requirement). Not meant to ship - just for testing the
-		// carries-across-items mechanic quickly on a local server.
+		// Debug-only: seed/set the target player's recorded levels directly, without
+		// needing them to actually grind an enchant up first. Op-only (permission level 2).
+		// Genuinely useful for testing the carry-across-items mechanic quickly, kept
+		// deliberately rather than stripped out once things worked.
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> dispatcher.register(
 				literal("maxenchant")
 						.requires(source -> source.hasPermissionLevel(2))
 						.then(literal("seed").executes(MaxEnchantMod::runSeedCommand))
 						.then(literal("set")
-								.then(argument("enchantment", com.mojang.brigadier.arguments.StringArgumentType.word())
+								.then(argument("enchantment", StringArgumentType.word())
 										.then(argument("level", integer(1))
 												.executes(MaxEnchantMod::runSetCommand))))
+						.then(literal("reload").executes(MaxEnchantMod::runReloadCommand))
 		));
 	}
 
@@ -80,8 +84,7 @@ public final class MaxEnchantMod implements ModInitializer {
 		recordLevelIfHigher(player, sharpness, 3);
 		recordLevelIfHigher(player, unbreaking, unbreaking.value().getMaxLevel());
 		ctx.getSource().sendFeedback(
-				() -> net.minecraft.text.Text.literal("Seeded: Sharpness 3, Unbreaking "
-						+ unbreaking.value().getMaxLevel() + " (max)"),
+				() -> Text.literal("Seeded: Sharpness 3, Unbreaking " + unbreaking.value().getMaxLevel() + " (max)"),
 				false
 		);
 		return 1;
@@ -92,26 +95,27 @@ public final class MaxEnchantMod implements ModInitializer {
 		if (player == null) {
 			return 0;
 		}
-		String id = com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "enchantment");
+		String id = StringArgumentType.getString(ctx, "enchantment");
 		int level = getInteger(ctx, "level");
 		var registry = ctx.getSource().getRegistryManager().get(RegistryKeys.ENCHANTMENT);
-		var key = net.minecraft.registry.RegistryKey.of(RegistryKeys.ENCHANTMENT, net.minecraft.util.Identifier.of("minecraft", id));
+		RegistryKey<Enchantment> key = RegistryKey.of(RegistryKeys.ENCHANTMENT, Identifier.of("minecraft", id));
 		var entryOpt = registry.getEntry(key);
 		if (entryOpt.isEmpty()) {
-			ctx.getSource().sendError(net.minecraft.text.Text.literal("No such enchantment: minecraft:" + id));
+			ctx.getSource().sendError(Text.literal("No such enchantment: minecraft:" + id));
 			return 0;
 		}
 		recordLevelIfHigher(player, entryOpt.get(), level);
-		ctx.getSource().sendFeedback(() -> net.minecraft.text.Text.literal("Recorded " + id + " " + level), false);
+		ctx.getSource().sendFeedback(() -> Text.literal("Recorded " + id + " " + level), false);
+		return 1;
+	}
+
+	private static int runReloadCommand(CommandContext<ServerCommandSource> ctx) {
+		MaxEnchantConfig.reload();
+		ctx.getSource().sendFeedback(() -> Text.literal("maxenchant config reloaded"), false);
 		return 1;
 	}
 
 	public static void trackIfTarget(ServerPlayerEntity player, ScreenHandler handler) {
-		org.slf4j.LoggerFactory.getLogger("maxenchant-debug").info(
-				"trackIfTarget: player={} handler={} isTarget={}",
-				player.getGameProfile().getName(), handler.getClass().getSimpleName(),
-				player.getUuid().equals(TARGET_PLAYER)
-		);
 		if (player.getUuid().equals(TARGET_PLAYER)) {
 			TARGET_HANDLERS.put(handler, player);
 		}
@@ -125,10 +129,6 @@ public final class MaxEnchantMod implements ModInitializer {
 	/** Current recorded level for this enchantment, or 0 if the player has never reached it. */
 	public static int getRecordedLevel(ServerPlayerEntity player, RegistryEntry<Enchantment> enchantment) {
 		Map<RegistryEntry<Enchantment>, Integer> levels = player.getAttached(MaxEnchantAttachments.LEVELS);
-		org.slf4j.LoggerFactory.getLogger("maxenchant-debug").info(
-				"getRecordedLevel: lookupKey={} (identity={}) storedMap={}",
-				enchantment.getIdAsString(), System.identityHashCode(enchantment), levels
-		);
 		if (levels == null) {
 			return 0;
 		}
@@ -142,10 +142,6 @@ public final class MaxEnchantMod implements ModInitializer {
 			levels = new HashMap<>();
 			player.setAttached(MaxEnchantAttachments.LEVELS, levels);
 		}
-		org.slf4j.LoggerFactory.getLogger("maxenchant-debug").info(
-				"recordLevelIfHigher: storeKey={} (identity={}) newLevel={}",
-				enchantment.getIdAsString(), System.identityHashCode(enchantment), newLevel
-		);
 		if (newLevel > levels.getOrDefault(enchantment, 0)) {
 			levels.put(enchantment, newLevel);
 		}

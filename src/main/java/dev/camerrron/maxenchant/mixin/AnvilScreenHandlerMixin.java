@@ -2,6 +2,7 @@ package dev.camerrron.maxenchant.mixin;
 
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import dev.camerrron.maxenchant.MaxEnchantConfig;
 import dev.camerrron.maxenchant.MaxEnchantMod;
 import net.minecraft.component.type.ItemEnchantmentsComponent;
 import net.minecraft.enchantment.Enchantment;
@@ -43,6 +44,14 @@ import org.spongepowered.asm.mixin.injection.At;
  * Same UNVERIFIED priority-ordering caveat as the table mixin - confirm in the local
  * integration test before trusting this against Penchant's own sumProgress wrap on the
  * identical call.
+ *
+ * Also UNVERIFIED: production has penchant:no_anvil_books enabled, whose exact effect on
+ * this code path hasn't been checked - it may disable anvil book application entirely,
+ * which would make this mixin as dead as EnchantmentScreenHandlerMixin turned out to be.
+ * Not yet confirmed either way.
+ *
+ * Cost is read from MaxEnchantConfig.getApplyCost(enchantId, recorded), same as the other
+ * two apply-mixins.
  */
 @Mixin(value = AnvilScreenHandler.class, priority = 500)
 public class AnvilScreenHandlerMixin {
@@ -64,6 +73,10 @@ public class AnvilScreenHandlerMixin {
 		if (player != null) {
 			int recorded = MaxEnchantMod.getRecordedLevel(player, enchantment);
 			if (recorded > 0) {
+				int cost = MaxEnchantConfig.get().getApplyCost(enchantment.getIdAsString(), recorded);
+				if (cost > 0) {
+					player.addExperienceLevels(-Math.min(cost, player.experienceLevel));
+				}
 				original.call(builder, enchantment, recorded);
 				return;
 			}

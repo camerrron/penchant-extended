@@ -4,6 +4,7 @@ import archives.tater.penchant.menu.PenchantmentMenu;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.llamalad7.mixinextras.sugar.Local;
+import dev.camerrron.maxenchant.MaxEnchantConfig;
 import dev.camerrron.maxenchant.MaxEnchantMod;
 import net.minecraft.component.type.ItemEnchantmentsComponent;
 import net.minecraft.enchantment.Enchantment;
@@ -43,6 +44,10 @@ import java.util.function.Consumer;
  * immediately re-set the same enchantment to the recorded level if the target player has
  * one. `enchantment` is captured via @Local since it's a parameter of the enclosing lambda
  * method, not part of the wrapped call's own signature.
+ *
+ * Cost is read from MaxEnchantConfig.getApplyCost(enchantId, recorded) - the configured
+ * total cost for that level, not a delta from the level Penchant would have rolled (always
+ * 1 here). Unconfigured enchant/level pairs default to costing exactly the level number.
  */
 @Mixin(value = PenchantmentMenu.class, priority = 500)
 public class PenchantmentMenuMixin {
@@ -68,11 +73,9 @@ public class PenchantmentMenuMixin {
 		if (recorded <= 0) {
 			return original.call(stack, originalConsumer);
 		}
-		// Penchant's table_rework always applies literal level 1 on a fresh enchant - see
-		// lambda$handleEnchant$1's real decompiled body, "enchantments.set(enchantment, 1)".
-		int extraCost = recorded - 1;
-		if (extraCost > 0) {
-			player.addExperienceLevels(-Math.min(extraCost, player.experienceLevel));
+		int cost = MaxEnchantConfig.get().getApplyCost(enchantment.getIdAsString(), recorded);
+		if (cost > 0) {
+			player.addExperienceLevels(-Math.min(cost, player.experienceLevel));
 		}
 		Consumer<ItemEnchantmentsComponent.Builder> decorated = builder -> {
 			originalConsumer.accept(builder);
